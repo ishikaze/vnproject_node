@@ -20,15 +20,22 @@
 </head>
 <body>
     <header>
-        <h1><i class="fa-solid fa-gamepad"></i> VNProject</h1>
+        <h1><i class="fa-solid fa-book"></i> VNProject</h1>
         <div>
-            <% if(user) { %>
-                <a href="/dashboard" class="btn">My Dashboard</a>
-                <a href="/logout" style="margin-left: 10px; color: #aaa;">Logout</a>
-            <% } else { %>
-                <a href="/auth/discord" class="btn"><i class="fa-brands fa-discord"></i> Login</a>
+        <% if(user) { %>
+            <!-- ADD THIS BLOCK HERE -->
+            <% if(user.is_admin) { %>
+                <a href="/admin" class="btn" style="background: #e17055; margin-right: 10px;">
+                    <i class="fa-solid fa-shield-halved"></i> Admin Panel
+                </a>
             <% } %>
-        </div>
+            
+            <a href="/dashboard" class="btn">My Dashboard</a>
+            <a href="/logout" style="margin-left: 10px; color: #aaa;">Logout</a>
+        <% } else { %>
+            <a href="/auth/discord" class="btn"><i class="fa-brands fa-discord"></i> Login</a>
+        <% } %>
+    </div>
     </header>
 
     <h2>Latest Visual Novels</h2>

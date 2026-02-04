@@ -12,6 +12,9 @@ const fs = require('fs');
 
 const app = express();
 
+// --- CONFIGURATION ---
+const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(id => id.trim());
+
 // --- 1. SETUP STORAGE FOLDERS ---
 const uploadDir = path.join(__dirname, 'public/uploads');
 const tempDir = path.join(__dirname, 'temp_uploads');
@@ -35,12 +38,80 @@ passport.use(new DiscordStrategy({
     callbackURL: process.env.DISCORD_CALLBACK_URL,
     scope: ['identify']
 }, (accessToken, refreshToken, profile, done) => {
-    const stmt = db.prepare('INSERT OR REPLACE INTO users (id, username) VALUES (?, ?)');
-    stmt.run(profile.id, profile.username);
-    return done(null, profile);
+    
+    // Check Admin Status based on .env
+    const isAdmin = ADMIN_IDS.includes(profile.id) ? 1 : 0;
+
+    // Upsert User
+    const stmt = db.prepare(`
+        INSERT INTO users (id, username, is_admin) 
+        VALUES (@id, @username, @is_admin)
+        ON CONFLICT(id) DO UPDATE SET 
+        username=@username, 
+        is_admin=@is_admin
+    `);
+    
+    stmt.run({
+        id: profile.id, 
+        username: profile.username,
+        is_admin: isAdmin
+    });
+
+    // Retrieve full user object (including is_banned)
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(profile.id);
+    return done(null, user);
 }));
 
-// --- 4. CONVERSION LOGIC ---
+// --- 4. MIDDLEWARE ---
+
+// Global Restriction Check (Bans & Whitelist)
+const checkGlobalRestrictions = (req, res, next) => {
+    if (req.path === '/login' || req.path === '/auth/discord' || req.path === '/auth/discord/callback' || req.path === '/logout') {
+        return next();
+    }
+
+    // Check Whitelist Mode
+    const whitelistSetting = db.prepare("SELECT value FROM settings WHERE key = 'whitelist_mode'").get();
+    const isWhitelist = whitelistSetting && whitelistSetting.value === '1';
+
+    if (req.isAuthenticated()) {
+        // 1. Check Ban
+        const user = db.prepare("SELECT is_banned, is_admin FROM users WHERE id = ?").get(req.user.id);
+        
+        if (user && user.is_banned) {
+            req.logout(() => {
+                return res.status(403).send("<h1>Access Denied</h1><p>Your account has been banned.</p>");
+            });
+            return;
+        }
+
+        // 2. Check Whitelist
+        if (isWhitelist && !user.is_admin) {
+            return res.status(503).send("<h1>Maintenance Mode</h1><p>The site is currently in closed testing. Only Admins can access.</p>");
+        }
+    } else {
+        // Guest Users during Whitelist
+        if (isWhitelist) {
+            // Allow them to see the landing page? Or block completely?
+            // Let's block completely except for login
+            return res.status(503).send("<h1>Maintenance Mode</h1><p>The site is currently in closed testing. <a href='/login'>Admin Login</a></p>");
+        }
+    }
+
+    next();
+};
+
+function checkAuth(req, res, next) {
+    if (req.isAuthenticated()) return next();
+    res.redirect('/login');
+}
+
+function checkAdmin(req, res, next) {
+    if (req.isAuthenticated() && req.user.is_admin) return next();
+    res.status(403).send("Admins only.");
+}
+
+// --- 5. CONVERSION LOGIC ---
 const processFile = (file) => {
     return new Promise((resolve, reject) => {
         const inputPath = file.path;
@@ -70,7 +141,7 @@ const processFile = (file) => {
     });
 };
 
-// --- 5. EXPRESS CONFIG ---
+// --- 6. EXPRESS CONFIG ---
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 app.use(express.json({ limit: '50mb' }));
@@ -83,52 +154,83 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-function checkAuth(req, res, next) {
-    if (req.isAuthenticated()) return next();
-    res.redirect('/login');
-}
+// Apply Global Restrictions
+app.use(checkGlobalRestrictions);
 
-// --- 6. ROUTES ---
+// --- 7. ADMIN ROUTES ---
 
-// Auth
+app.get('/admin', checkAdmin, (req, res) => {
+    const whitelistSetting = db.prepare("SELECT value FROM settings WHERE key = 'whitelist_mode'").get();
+    const whitelistEnabled = whitelistSetting && whitelistSetting.value === '1';
+
+    const users = db.prepare("SELECT * FROM users ORDER BY is_admin DESC").all();
+    const projects = db.prepare("SELECT p.*, u.username FROM projects p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC").all();
+    const assets = db.prepare("SELECT a.*, u.username FROM assets a JOIN users u ON a.user_id = u.id ORDER BY a.id DESC LIMIT 50").all();
+
+    res.render('admin', { whitelistEnabled, users, projects, assets });
+});
+
+app.post('/admin/toggle-whitelist', checkAdmin, (req, res) => {
+    const current = db.prepare("SELECT value FROM settings WHERE key = 'whitelist_mode'").get();
+    const newVal = current.value === '1' ? '0' : '1';
+    db.prepare("UPDATE settings SET value = ? WHERE key = 'whitelist_mode'").run(newVal);
+    res.redirect('/admin');
+});
+
+app.post('/admin/user/:id/toggle-ban', checkAdmin, (req, res) => {
+    // Prevent banning self
+    if(req.params.id === req.user.id) return res.status(400).send("Cannot ban self.");
+    
+    const user = db.prepare("SELECT is_banned FROM users WHERE id = ?").get(req.params.id);
+    const newVal = user.is_banned ? 0 : 1;
+    db.prepare("UPDATE users SET is_banned = ? WHERE id = ?").run(newVal, req.params.id);
+    res.redirect('/admin');
+});
+
+app.post('/admin/project/:id/delete', checkAdmin, (req, res) => {
+    // Cascade delete handles episodes and asset DB entries, but we must delete files manually
+    const assets = db.prepare("SELECT url FROM assets WHERE project_id = ?").all(req.params.id);
+    
+    assets.forEach(a => {
+        const filePath = path.join(__dirname, 'public', a.url);
+        if(fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    });
+
+    db.prepare("DELETE FROM projects WHERE id = ?").run(req.params.id);
+    res.redirect('/admin');
+});
+
+app.post('/admin/asset/:id/delete', checkAdmin, (req, res) => {
+    const asset = db.prepare("SELECT url FROM assets WHERE id = ?").get(req.params.id);
+    if(asset) {
+        const filePath = path.join(__dirname, 'public', asset.url);
+        if(fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        db.prepare("DELETE FROM assets WHERE id = ?").run(req.params.id);
+    }
+    res.redirect('/admin');
+});
+
+
+// --- 8. STANDARD ROUTES ---
+
+app.get('/', (req, res) => {
+    const projects = db.prepare(`SELECT p.*, u.username FROM projects p JOIN users u ON p.user_id = u.id WHERE p.is_published = 1 ORDER BY p.created_at DESC`).all();
+    res.render('landing', { projects, user: req.user });
+});
+
 app.get('/login', (req, res) => res.render('login'));
 app.get('/auth/discord', passport.authenticate('discord'));
 app.get('/auth/discord/callback', passport.authenticate('discord', { failureRedirect: '/login' }), 
     (req, res) => res.redirect('/dashboard'));
 app.get('/logout', (req, res) => { req.logout(() => res.redirect('/')); });
 
-// 1. LANDING PAGE
-app.get('/', (req, res) => {
-    const projects = db.prepare(`SELECT p.*, u.username FROM projects p JOIN users u ON p.user_id = u.id WHERE p.is_published = 1 ORDER BY p.created_at DESC`).all();
-    res.render('landing', { projects, user: req.user });
-});
-
-// 2. PUBLIC SERIES PAGE
-app.get('/series/:id', (req, res) => {
-    const project = db.prepare('SELECT p.*, u.username FROM projects p JOIN users u ON p.user_id = u.id WHERE p.id = ?').get(req.params.id);
-    if (!project || (!project.is_published && (!req.user || req.user.id !== project.user_id))) return res.status(404).send("Project not found or private.");
-    const episodes = db.prepare('SELECT id, title, episode_number FROM episodes WHERE project_id = ? AND published_data IS NOT NULL ORDER BY episode_number ASC').all(project.id);
-    res.render('series_public', { project, episodes, user: req.user });
-});
-
-// 3. PUBLIC PLAYER
-app.get('/play/:episodeId', (req, res) => {
-    const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(req.params.episodeId);
-    if (!episode || !episode.published_data) return res.status(404).send("Episode not found or not published.");
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(episode.project_id);
-    const assets = db.prepare('SELECT * FROM assets WHERE project_id = ?').all(project.id);
-    res.render('player', {
-        episodeJSON: episode.published_data,
-        assetsJSON: JSON.stringify(assets),
-        title: `${project.title} - ${episode.title}`
-    });
-});
-
-// 4. DASHBOARD
 app.get('/dashboard', checkAuth, (req, res) => {
     const projects = db.prepare('SELECT * FROM projects WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
     res.render('dashboard', { user: req.user, projects });
 });
+
+// Admin Button in Dashboard (Optional convenience)
+// You can add this to dashboard.ejs later if you want
 
 app.post('/project/create', checkAuth, (req, res) => {
     const stmt = db.prepare('INSERT INTO projects (user_id, title, description) VALUES (?, ?, ?)');
@@ -136,7 +238,27 @@ app.post('/project/create', checkAuth, (req, res) => {
     res.redirect('/dashboard');
 });
 
-// 5. PROJECT MANAGE (Combined Assets & Episodes)
+app.get('/series/:id', (req, res) => {
+    const project = db.prepare('SELECT p.*, u.username FROM projects p JOIN users u ON p.user_id = u.id WHERE p.id = ?').get(req.params.id);
+    if (!project || (!project.is_published && (!req.user || req.user.id !== project.user_id))) return res.status(404).send("Project not found.");
+    const episodes = db.prepare('SELECT id, title, episode_number FROM episodes WHERE project_id = ? AND published_data IS NOT NULL ORDER BY episode_number ASC').all(project.id);
+    res.render('series_public', { project, episodes, user: req.user });
+});
+
+app.get('/play/:episodeId', (req, res) => {
+    const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(req.params.episodeId);
+    if (!episode || !episode.published_data) return res.status(404).send("Episode not found.");
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(episode.project_id);
+    const assets = db.prepare('SELECT * FROM assets WHERE project_id = ?').all(project.id);
+
+    res.render('player', {
+        episodeJSON: episode.published_data,
+        assetsJSON: JSON.stringify(assets),
+        title: `${project.title} - ${episode.title}`,
+        projectId: project.id
+    });
+});
+
 app.get('/project/:id/manage', checkAuth, (req, res) => {
     const project = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
     if (!project) return res.redirect('/dashboard');
@@ -151,7 +273,6 @@ app.post('/project/:id/toggle-publish', checkAuth, (req, res) => {
     res.redirect(`/project/${req.params.id}/manage`);
 });
 
-// 6. EPISODE ACTIONS
 app.post('/project/:id/episode/create', checkAuth, (req, res) => {
     const defaultData = JSON.stringify({ scenes: { 'scene_start': { id: 'scene_start', name: 'Start', blocks: [] } }, activeSceneId: 'scene_start' });
     const stmt = db.prepare('INSERT INTO episodes (project_id, title, episode_number, draft_data) VALUES (?, ?, ?, ?)');
@@ -164,11 +285,9 @@ app.post('/api/episode/:id/publish', checkAuth, (req, res) => {
     const project = db.prepare('SELECT user_id FROM projects WHERE id = ?').get(episode.project_id);
     if (project.user_id !== req.user.id) return res.status(403).send("Unauthorized");
     db.prepare('UPDATE episodes SET published_data = draft_data, last_published_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.id);
-    res.json({ success: true, message: "Episode Published!" });
+    res.json({ success: true, message: "Published!" });
 });
 
-// 7. EDITOR (EPISODE MODE)
-// Note: We route based on Episode ID now, not Project ID
 app.get('/editor/:episodeId', checkAuth, (req, res) => {
     const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(req.params.episodeId);
     if (!episode) return res.redirect('/dashboard');
@@ -184,11 +303,8 @@ app.get('/editor/:episodeId', checkAuth, (req, res) => {
     });
 });
 
-// SAVE (EPISODE DATA)
 app.post('/api/save/:episodeId', checkAuth, (req, res) => {
     const episode = db.prepare('SELECT project_id FROM episodes WHERE id = ?').get(req.params.episodeId);
-    if(!episode) return res.status(404).send();
-    // Verify ownership
     const project = db.prepare('SELECT user_id FROM projects WHERE id = ?').get(episode.project_id);
     if(project.user_id !== req.user.id) return res.status(403).send();
 
@@ -197,7 +313,6 @@ app.post('/api/save/:episodeId', checkAuth, (req, res) => {
     res.json({ success: true });
 });
 
-// 8. ASSET UPLOAD
 app.post('/project/:id/upload', checkAuth, upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(500).send("No file uploaded.");
     try {

@@ -89,7 +89,6 @@
     <!-- 
       HIDDEN DOM ELEMENTS 
       These are required because editor.js tries to access them.
-      We keep them in the DOM but hidden to prevent JS errors.
     -->
     <div style="display:none;">
         <div id="timeline-scroll-area"><div id="timeline-grid"><div id="tl-playhead"></div></div></div>
@@ -100,65 +99,59 @@
         <input id="file-input">
         <button id="btn-undo"></button>
         <button id="btn-redo"></button>
-        <button id="btn-play"></button> <!-- Logic clicks this virtually -->
+        <button id="btn-play"></button> 
     </div>
 
-    <!-- DATA INJECTION -->
     <script>
-        // Inject Data from Server
+        // DATA INJECTION
         const SERVER_DATA = <%- episodeJSON ? episodeJSON : 'null' %>;
         const SERVER_ASSETS = <%- assetsJSON && assetsJSON.length > 0 ? assetsJSON : '[]' %>;
-        
-        // Mock variables to satisfy editor.js
-        let isGridView = false;
-        let customCSS = ''; // CSS is handled via style tag above
+        const PROJECT_ID = <%= projectId %>; // Correctly matching the key from res.render
     </script>
 
     <!-- LOGIC ENGINE -->
     <script src="/js/editor.js"></script>
 
-    <!-- AUTO-START SCRIPT -->
+    <!-- AUTO-START & REDIRECT SCRIPT -->
     <script>
-        // Override the Editor's window.onload
         window.onload = () => {
             if (!SERVER_DATA) {
                 document.body.innerHTML = "<div style='color:white; text-align:center'>Error: No Data Found</div>";
                 return;
             }
 
-            // 1. Load Data
+            // 1. Load Data into memory
             if (SERVER_DATA.scenes) {
                 scenes = SERVER_DATA.scenes;
                 activeSceneId = SERVER_DATA.activeSceneId || Object.keys(scenes)[0];
             } else {
-                // Legacy support
                  scenes = { 'scene_start': { id: 'scene_start', name: 'Start', blocks: SERVER_DATA.timeline || [] } };
                  activeSceneId = 'scene_start';
             }
 
-            // 2. Initialize minimal logic
-            // We call renderTimeline because the engine logic often loops through 'timelineData'
-            // which is a getter for scenes[activeSceneId].blocks
-            
             resizeStage();
             window.addEventListener('resize', resizeStage);
 
-            // 3. Disable Keyboard Shortcuts (prevent Undo/Redo/Delete)
+            // 2. Disable Keyboard Shortcuts (prevent Undo/Redo/Delete/Save)
             document.onkeydown = (e) => {
-                // Allow F11 (Fullscreen) and F5 (Refresh)
                 if(e.key === 'F11' || e.key === 'F5') return;
-                // Block everything else to prevent editing interaction
+                e.preventDefault();
                 e.stopPropagation();
             };
 
-            // 4. AUTO PLAY
-            console.log("Starting Auto-Play...");
+            // 3. AUTO PLAY & REDIRECT
+            console.log("Starting Episode...");
             
-            // Allow fonts/images a split second to load, then run
-            setTimeout(() => {
-                // Manually trigger the run state
+            // We use a small timeout to let the browser stabilize
+            setTimeout(async () => {
                 if(!isRunning) {
-                    toggleRun();
+                    // Because toggleRun is an ASYNC function, we can await it.
+                    // It will finish only when the playback loop ends naturally.
+                    await toggleRun();
+
+                    // 4. REDIRECT
+                    console.log("Episode finished. Redirecting...");
+                    window.location.href = "/series/" + PROJECT_ID;
                 }
             }, 500);
         };

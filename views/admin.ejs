@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: #121212; color: #eee; font-family: sans-serif; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 20px; margin-bottom: 20px; }
+        .section { background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; }
+        h2 { margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
+        th { color: #888; }
+        
+        button { cursor: pointer; padding: 5px 10px; border-radius: 4px; border: none; }
+        .btn-danger { background: #d63031; color: white; }
+        .btn-warn { background: #e17055; color: white; }
+        .btn-success { background: #00b894; color: white; }
+        
+        .status-on { color: #00b894; font-weight: bold; }
+        .status-off { color: #636e72; }
+        .banned { color: #d63031; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><i class="fa-solid fa-shield-halved"></i> Admin Dashboard</h1>
+        <a href="/dashboard" style="color:#aaa; text-decoration:none;">Exit to Dashboard</a>
+    </div>
+
+    <!-- GLOBAL SETTINGS -->
+    <div class="section">
+        <h2>System Status</h2>
+        <div style="display:flex; align-items:center; gap: 20px;">
+            <div>
+                <strong>Whitelist Mode (Maintenance):</strong> 
+                <span class="<%= whitelistEnabled ? 'status-on' : 'status-off' %>">
+                    <%= whitelistEnabled ? 'ENABLED' : 'DISABLED' %>
+                </span>
+            </div>
+            <form action="/admin/toggle-whitelist" method="POST">
+                <button type="submit" class="<%= whitelistEnabled ? 'btn-success' : 'btn-danger' %>">
+                    <%= whitelistEnabled ? 'Disable Whitelist' : 'Enable Whitelist' %>
+                </button>
+            </form>
+        </div>
+        <p style="color:#888; font-size:0.9em; margin-top:10px;">
+            When Whitelist is Enabled, only Admins defined in <code>.env</code> can access the site.
+        </p>
+    </div>
+
+    <!-- USER MANAGEMENT -->
+    <div class="section">
+        <h2>User Management</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+                <% users.forEach(u => { %>
+                <tr>
+                    <td style="font-family:monospace; font-size:0.9em; color:#666"><%= u.id %></td>
+                    <td><%= u.username %></td>
+                    <td><%= u.is_admin ? 'ADMIN' : 'User' %></td>
+                    <td>
+                        <% if(u.is_banned) { %><span class="banned">BANNED</span><% } else { %>Active<% } %>
+                    </td>
+                    <td>
+                        <% if(!u.is_admin) { %>
+                            <form action="/admin/user/<%= u.id %>/toggle-ban" method="POST">
+                                <button class="<%= u.is_banned ? 'btn-success' : 'btn-danger' %>">
+                                    <%= u.is_banned ? 'Unban' : 'Ban User' %>
+                                </button>
+                            </form>
+                        <% } else { %>
+                            <span style="color:#aaa; font-style:italic;">Protected</span>
+                        <% } %>
+                    </td>
+                </tr>
+                <% }) %>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- PROJECT MANAGEMENT -->
+    <div class="section">
+        <h2>All Projects</h2>
+        <table>
+            <thead><tr><th>Title</th><th>Owner</th><th>Created</th><th>Action</th></tr></thead>
+            <tbody>
+                <% projects.forEach(p => { %>
+                <tr>
+                    <td><%= p.title %></td>
+                    <td><%= p.username %></td>
+                    <td><%= p.created_at %></td>
+                    <td>
+                        <form action="/admin/project/<%= p.id %>/delete" method="POST" onsubmit="return confirm('Delete this project and ALL its assets?');">
+                            <button class="btn-danger">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                <% }) %>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ASSET CLEANUP -->
+    <div class="section">
+        <h2>Recent Uploads</h2>
+        <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th>Action</th></tr></thead>
+            <tbody>
+                <% assets.forEach(a => { %>
+                <tr>
+                    <td><%= a.name %></td>
+                    <td><%= a.type %></td>
+                    <td><%= a.username %></td>
+                    <td>
+                        <form action="/admin/asset/<%= a.id %>/delete" method="POST" onsubmit="return confirm('Delete this file?');">
+                            <button class="btn-danger">Delete File</button>
+                        </form>
+                    </td>
+                </tr>
+                <% }) %>
+            </tbody>
+        </table>
+    </div>
+
+</body>
+</html>

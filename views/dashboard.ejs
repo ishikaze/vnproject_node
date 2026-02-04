@@ -11,7 +11,17 @@
     </style>
 </head>
 <body>
-    <h1>Dashboard</h1>
+   <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1>Dashboard</h1>
+        <div>
+            <% if(user.is_admin) { %>
+                <a href="/admin" style="background: #e17055; color: white; padding: 8px 15px; border-radius: 4px; text-decoration: none; margin-right: 10px;">
+                    <i class="fa-solid fa-shield-halved"></i> Admin Panel
+                </a>
+            <% } %>
+            <a href="/" style="color: #aaa; text-decoration: none;">View Site &rarr;</a>
+        </div>
+    </div>
     <div style="background: #1e1e1e; padding: 15px; margin-bottom: 20px;">
         <h3>Start New Series</h3>
         <form action="/project/create" method="POST">

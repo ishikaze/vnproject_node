@@ -1345,7 +1345,12 @@ function resetPreview() {
     mc.innerHTML = '';
 
     activeMediaSources = { audio: null, video: null };
-    document.getElementById('gizmo-box').style.display = 'none';
+    try {
+        document.getElementById('gizmo-box').style.display = 'none';
+    } catch (error) {
+        
+    }
+    
 }
 
 function playMedia(b) {
