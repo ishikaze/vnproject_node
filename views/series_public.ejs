@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title><%= project.title %></title>
+    <style>body { background: #121212; color: #eee; font-family: sans-serif; padding: 40px; text-align: center; } a {color: #007acc}</style>
+</head>
+<body>
+    <a href="/">Back to Home</a>
+    <h1><%= project.title %></h1>
+    <p>By <%= project.username %></p>
+    <p><%= project.description %></p>
+
+    <hr style="border-color: #333; width: 50%;">
+
+    <h3>Episodes</h3>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+        <% episodes.forEach(ep => { %>
+            <a href="/play/<%= ep.id %>" style="background: #1e1e1e; padding: 15px 30px; border: 1px solid #333; border-radius: 5px; text-decoration: none; width: 300px;">
+                Ep. <%= ep.episode_number %>: <%= ep.title %>
+            </a>
+        <% }) %>
+        <% if(episodes.length === 0) { %>
+            <p>No episodes released yet.</p>
+        <% } %>
+    </div>
+</body>
+</html>

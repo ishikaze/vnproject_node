@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %></title>
+    <!-- FontAwesome (Needed for icons if used in UI) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Reuse your main styles -->
+    <link rel="stylesheet" href="/css/style.css">
+    
+    <style>
+        /* --- PLAYER MODE OVERRIDES --- */
+        
+        /* 1. Hide Editor Panels */
+        #top-bar, 
+        #left-panel, 
+        #right-panel, 
+        #timeline-panel, 
+        .resizer,
+        .resizer-v,
+        .resizer-h,
+        #context-menu,
+        #gizmo-layer { 
+            display: none !important; 
+        }
+
+        /* 2. Reset Body Layout (Remove Editor Grid) */
+        body {
+            display: flex !important;
+            justify-content: center;
+            align-items: center;
+            background-color: #000;
+            margin: 0;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+
+        /* 3. Center Panel takes full screen */
+        #center-panel {
+            grid-area: auto;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 4. Ensure Stage is visible and interactive */
+        #game-stage {
+            box-shadow: none; /* Remove editor shadow */
+            pointer-events: auto;
+        }
+
+        /* 5. Custom Customizations injected from Server */
+        <%- episodeJSON && episodeJSON.css ? episodeJSON.css : '' %>
+    </style>
+</head>
+<body>
+
+    <!-- MAIN GAME CONTAINER -->
+    <main id="center-panel">
+        <div id="game-stage">
+            <div id="scene-wrapper">
+                <div id="bg-layer" class="layer"></div>
+                <div id="media-layer" class="layer"></div>
+                <div id="sprite-layer" class="layer"></div>
+            </div>
+            
+            <div id="ui-layer" class="layer">
+                <div id="dialogue-box">
+                    <div id="speaker-name"></div>
+                    <div id="dialogue-text"></div>
+                </div>
+                <div id="choice-menu"></div>
+            </div>
+
+            <!-- Audio Container -->
+            <div id="audio-container" style="display:none;"></div>
+            
+            <!-- Hidden Status (Optional) -->
+            <div id="status-indicator" style="display:none"></div>
+        </div>
+    </main>
+
+    <!-- 
+      HIDDEN DOM ELEMENTS 
+      These are required because editor.js tries to access them.
+      We keep them in the DOM but hidden to prevent JS errors.
+    -->
+    <div style="display:none;">
+        <div id="timeline-scroll-area"><div id="timeline-grid"><div id="tl-playhead"></div></div></div>
+        <div id="inspector-content"></div>
+        <div id="scene-list"></div>
+        <div id="tray-list"></div>
+        <input id="tray-zoom-slider">
+        <input id="file-input">
+        <button id="btn-undo"></button>
+        <button id="btn-redo"></button>
+        <button id="btn-play"></button> <!-- Logic clicks this virtually -->
+    </div>
+
+    <!-- DATA INJECTION -->
+    <script>
+        // Inject Data from Server
+        const SERVER_DATA = <%- episodeJSON ? episodeJSON : 'null' %>;
+        const SERVER_ASSETS = <%- assetsJSON && assetsJSON.length > 0 ? assetsJSON : '[]' %>;
+        
+        // Mock variables to satisfy editor.js
+        let isGridView = false;
+        let customCSS = ''; // CSS is handled via style tag above
+    </script>
+
+    <!-- LOGIC ENGINE -->
+    <script src="/js/editor.js"></script>
+
+    <!-- AUTO-START SCRIPT -->
+    <script>
+        // Override the Editor's window.onload
+        window.onload = () => {
+            if (!SERVER_DATA) {
+                document.body.innerHTML = "<div style='color:white; text-align:center'>Error: No Data Found</div>";
+                return;
+            }
+
+            // 1. Load Data
+            if (SERVER_DATA.scenes) {
+                scenes = SERVER_DATA.scenes;
+                activeSceneId = SERVER_DATA.activeSceneId || Object.keys(scenes)[0];
+            } else {
+                // Legacy support
+                 scenes = { 'scene_start': { id: 'scene_start', name: 'Start', blocks: SERVER_DATA.timeline || [] } };
+                 activeSceneId = 'scene_start';
+            }
+
+            // 2. Initialize minimal logic
+            // We call renderTimeline because the engine logic often loops through 'timelineData'
+            // which is a getter for scenes[activeSceneId].blocks
+            
+            resizeStage();
+            window.addEventListener('resize', resizeStage);
+
+            // 3. Disable Keyboard Shortcuts (prevent Undo/Redo/Delete)
+            document.onkeydown = (e) => {
+                // Allow F11 (Fullscreen) and F5 (Refresh)
+                if(e.key === 'F11' || e.key === 'F5') return;
+                // Block everything else to prevent editing interaction
+                e.stopPropagation();
+            };
+
+            // 4. AUTO PLAY
+            console.log("Starting Auto-Play...");
+            
+            // Allow fonts/images a split second to load, then run
+            setTimeout(() => {
+                // Manually trigger the run state
+                if(!isRunning) {
+                    toggleRun();
+                }
+            }, 500);
+        };
+    </script>
+</body>
+</html>

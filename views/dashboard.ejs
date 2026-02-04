@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard</title>
+    <style>
+        body { background: #121212; color: #eee; font-family: sans-serif; padding: 20px; }
+        .card { background: #1e1e1e; padding: 15px; margin-bottom: 10px; border: 1px solid #333; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+        a { color: #007acc; text-decoration: none; margin-left: 10px; }
+        button { background: #007acc; border: none; padding: 8px 15px; color: white; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Dashboard</h1>
+    <div style="background: #1e1e1e; padding: 15px; margin-bottom: 20px;">
+        <h3>Start New Series</h3>
+        <form action="/project/create" method="POST">
+            <input type="text" name="title" placeholder="Series Title" required>
+            <input type="text" name="description" placeholder="Description">
+            <button type="submit">Create</button>
+        </form>
+    </div>
+
+    <h3>My Series</h3>
+    <% projects.forEach(p => { %>
+        <div style="background:#222; padding:10px; margin-bottom:10px; border-left: 4px solid <%= p.is_published ? '#00ff00' : '#444' %>">
+            <strong><%= p.title %></strong>
+            <span style="color:#666"><%= p.is_published ? '(Public)' : '(Hidden)' %></span>
+            <a href="/project/<%= p.id %>/manage" style="float:right">Manage Series & Episodes &rarr;</a>
+        </div>
+    <% }) %>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VN Hub</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: #121212; color: #eee; font-family: sans-serif; margin: 0; padding: 20px; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; border-bottom: 1px solid #333; padding-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+        .card { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; overflow: hidden; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-5px); border-color: #007acc; }
+        .card-img { height: 140px; background: #333; display: flex; align-items: center; justify-content: center; color: #555; }
+        .card-content { padding: 15px; }
+        h3 { margin: 0 0 5px 0; color: #fff; }
+        p { color: #aaa; font-size: 0.9em; }
+        a { text-decoration: none; color: inherit; }
+        .btn { background: #007acc; color: white; padding: 8px 15px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1><i class="fa-solid fa-gamepad"></i> VNProject</h1>
+        <div>
+            <% if(user) { %>
+                <a href="/dashboard" class="btn">My Dashboard</a>
+                <a href="/logout" style="margin-left: 10px; color: #aaa;">Logout</a>
+            <% } else { %>
+                <a href="/auth/discord" class="btn"><i class="fa-brands fa-discord"></i> Login</a>
+            <% } %>
+        </div>
+    </header>
+
+    <h2>Latest Visual Novels</h2>
+    <div class="grid">
+        <% projects.forEach(p => { %>
+            <a href="/series/<%= p.id %>" class="card">
+                <div class="card-img">
+                    <!-- Ideally user uploaded cover, for now placeholder -->
+                    <i class="fa-solid fa-image fa-2x"></i>
+                </div>
+                <div class="card-content">
+                    <h3><%= p.title %></h3>
+                    <p>By <%= p.username %></p>
+                    <p style="font-style: italic; margin-top: 5px;"><%= p.description || 'No description.' %></p>
+                </div>
+            </a>
+        <% }) %>
+    </div>
+</body>
+</html>

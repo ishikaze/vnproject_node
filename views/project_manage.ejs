@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Manage <%= project.title %></title>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: #121212; color: #eee; font-family: sans-serif; padding: 20px; }
+        h1, h3 { margin-top: 0; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 15px; }
+        .back-link { color: #aaa; text-decoration: none; display: flex; align-items: center; gap: 5px; }
+        .back-link:hover { color: white; }
+
+        .section { background: #1e1e1e; border: 1px solid #333; border-radius: 6px; padding: 20px; margin-bottom: 30px; }
+        
+        /* Table Styles */
+        table { width: 100%; text-align: left; border-collapse: collapse; margin-top: 15px; }
+        td, th { padding: 12px; border-bottom: 1px solid #333; }
+        th { color: #888; font-size: 0.85em; text-transform: uppercase; }
+        tr:last-child td { border-bottom: none; }
+        
+        /* Button Styles */
+        button { cursor: pointer; padding: 6px 12px; border-radius: 4px; border: none; font-weight: bold; }
+        .btn-primary { background: #007acc; color: white; }
+        .btn-primary:hover { background: #005fa3; }
+        .btn-danger { background: #d63031; color: white; }
+        .btn-sec { background: #333; color: #ccc; border: 1px solid #555; }
+        .btn-sec:hover { background: #444; color: white; }
+
+        /* Form Elements */
+        input[type="text"], input[type="number"], select {
+            padding: 8px; background: #111; border: 1px solid #444; color: white; border-radius: 4px;
+        }
+        
+        /* Asset Preview */
+        .asset-preview { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; background: #333; display: flex; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Manage: <%= project.title %></h1>
+        <a href="/dashboard" class="back-link"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>
+    </div>
+
+    <!-- 1. PUBLISH SETTINGS -->
+    <div class="section">
+        <h3><i class="fa-solid fa-globe"></i> Series Visibility</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <p style="margin: 0; color: #aaa;">Current Status:</p>
+                <div style="font-size: 1.2em; font-weight: bold; color: <%= project.is_published ? '#00ff00' : '#ff6b6b' %>;">
+                    <%= project.is_published ? 'PUBLIC (Visible on Landing Page)' : 'HIDDEN (Private)' %>
+                </div>
+            </div>
+            <form action="/project/<%= project.id %>/toggle-publish" method="POST">
+                <button type="submit" class="<%= project.is_published ? 'btn-sec' : 'btn-primary' %>">
+                    <%= project.is_published ? 'Unpublish Series' : 'Publish Series' %>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. EPISODES -->
+    <div class="section">
+        <h3><i class="fa-solid fa-film"></i> Episodes</h3>
+        
+        <!-- Add Episode Form -->
+        <form action="/project/<%= project.id %>/episode/create" method="POST" style="background: #252525; padding: 15px; border-radius: 4px; display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+            <strong style="color:#aaa">New Episode:</strong>
+            <input type="number" name="episode_number" value="<%= episodes.length + 1 %>" style="width: 60px;" placeholder="#">
+            <input type="text" name="title" placeholder="Episode Title (e.g. The Beginning)" required style="flex: 1;">
+            <button type="submit" class="btn-primary"><i class="fa-solid fa-plus"></i> Create</button>
+        </form>
+
+        <!-- Episode List -->
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 50px;">#</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <% if(episodes.length === 0) { %>
+                    <tr><td colspan="4" style="text-align:center; color:#666; padding:20px;">No episodes created yet.</td></tr>
+                <% } %>
+
+                <% episodes.forEach(ep => { %>
+                <tr>
+                    <td><%= ep.episode_number %></td>
+                    <td><%= ep.title %></td>
+                    <td>
+                        <% if(ep.published_data) { %>
+                            <span style="color:#00ff00; font-size: 0.9em; background: rgba(0,255,0,0.1); padding: 3px 8px; border-radius: 10px;">Published</span>
+                        <% } else { %>
+                            <span style="color:#ffae00; font-size: 0.9em; background: rgba(255, 174, 0, 0.1); padding: 3px 8px; border-radius: 10px;">Draft</span>
+                        <% } %>
+                    </td>
+                    <td style="text-align: right; display: flex; gap: 10px; justify-content: flex-end;">
+                        <a href="/editor/<%= ep.id %>" class="btn-sec" style="text-decoration:none; padding: 6px 12px; font-size: 0.9em;">
+                            <i class="fa-solid fa-pen"></i> Edit
+                        </a>
+                        <button class="btn-primary" onclick="publishEpisode(<%= ep.id %>)" title="Push Draft to Public">
+                            <i class="fa-solid fa-upload"></i> Publish
+                        </button>
+                    </td>
+                </tr>
+                <% }) %>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 3. ASSETS (The part that was missing!) -->
+    <div class="section">
+        <h3><i class="fa-solid fa-images"></i> Assets</h3>
+        <p style="color:#aaa; font-size:0.9em; margin-bottom:15px;">
+            Upload backgrounds, characters, and music here. They will appear in the Editor's palette.
+        </p>
+
+        <!-- Upload Form -->
+        <form action="/project/<%= project.id %>/upload" method="POST" enctype="multipart/form-data" 
+              style="background: #252525; padding: 15px; border-radius: 4px; display: flex; gap: 10px; align-items: center; margin-bottom: 20px;">
+            
+            <input type="text" name="name" placeholder="Asset Name (Optional)" style="width: 200px;">
+            
+            <select name="type">
+                <option value="bg">Image: Background</option>
+                <option value="sprite">Image: Sprite</option>
+                <option value="audio">Audio</option>
+                <option value="video">Video</option>
+            </select>
+            
+            <input type="file" name="file" required style="flex: 1; border: none; padding-top: 10px;">
+            <button type="submit" class="btn-primary"><i class="fa-solid fa-cloud-arrow-up"></i> Upload</button>
+        </form>
+
+        <!-- Asset List -->
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 60px;">Preview</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>URL (Copy if needed)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <% if(assets.length === 0) { %>
+                    <tr><td colspan="4" style="text-align:center; color:#666; padding:20px;">No assets uploaded yet.</td></tr>
+                <% } %>
+
+                <% assets.forEach(asset => { %>
+                <tr>
+                    <td>
+                        <!-- Preview Logic -->
+                        <% if(asset.type === 'bg' || asset.type === 'sprite' || asset.type === 'image') { %>
+                            <img src="<%= asset.url %>" class="asset-preview">
+                        <% } else if(asset.type === 'video') { %>
+                            <div class="asset-preview"><i class="fa-solid fa-video"></i></div>
+                        <% } else { %>
+                            <div class="asset-preview"><i class="fa-solid fa-music"></i></div>
+                        <% } %>
+                    </td>
+                    <td><%= asset.name %></td>
+                    <td>
+                        <span style="background:#333; padding:2px 6px; border-radius:4px; font-size:0.8em; color:#ccc">
+                            <%= asset.type.toUpperCase() %>
+                        </span>
+                    </td>
+                    <td>
+                        <input type="text" value="<%= asset.url %>" readonly 
+                               onclick="this.select()" 
+                               style="width: 100%; background: transparent; border: none; color: #666; font-family: monospace;">
+                    </td>
+                </tr>
+                <% }) %>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        async function publishEpisode(id) {
+            if(!confirm("Publishing will overwrite the public version of this episode with your current draft.\n\nAre you sure?")) return;
+            
+            try {
+                const res = await fetch(`/api/episode/${id}/publish`, { method: 'POST' });
+                const data = await res.json();
+                
+                if(data.success) {
+                    location.reload();
+                } else {
+                    alert("Error publishing: " + (data.message || 'Unknown error'));
+                }
+            } catch(e) {
+                console.error(e);
+                alert("Network error.");
+            }
+        }
+    </script>
+</body>
+</html>

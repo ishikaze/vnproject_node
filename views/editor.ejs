@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VN Editor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+    <style id="custom-css-layer"></style>
+</head>
+<body onclick="hideContextMenu()">
+
+    <!-- TOP TOOLBAR -->
+    <header id="top-bar">
+        <div class="app-title"><i class="fa-solid fa-layer-group"></i> VN EDITOR</div>
+        
+        <!-- UPDATED: Saves to Database now -->
+        <button class="tool-btn" onclick="saveToServer()">
+            <i class="fa-solid fa-cloud-arrow-up"></i> Save Draft
+        </button>
+
+        <button class="tool-btn" onclick="document.getElementById('file-input').click()">
+            <i class="fa-solid fa-folder-open"></i> Load File
+        </button>
+        
+        <button class="tool-btn" onclick="resetTimeline()">
+            <i class="fa-solid fa-trash"></i> Clear
+        </button>
+
+        <div style="width:1px; height:20px; background:#444; margin:0 5px;"></div>
+        
+        <button class="tool-btn" onclick="openGlobalSettings()">
+            <i class="fa-solid fa-palette"></i> Global CSS
+        </button>
+
+        <!-- Keep Export as backup -->
+        <button class="tool-btn" onclick="exportData()" style="margin-left:auto">
+            <i class="fa-solid fa-download"></i> Export JSON
+        </button>
+
+        <input type="file" id="file-input" style="display:none" onchange="importData(this)">
+    </header>
+
+    <!-- LEFT PANEL -->
+    <aside id="left-panel">
+        <div class="panel-header">
+            <span>Scenes</span>
+            <button onclick="addScene()" style="background:none; border:none; color:#ccc; cursor:pointer;" title="Add Scene">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+        </div>
+        <div id="scene-list"></div>
+
+        <div class="panel-header">
+            <span>Palette</span>
+            <input type="range" id="tray-zoom-slider" min="0.6" max="1.4" step="0.1" value="1" 
+                   style="width:60px; height:4px; accent-color:var(--accent); cursor:pointer;" 
+                   oninput="setTrayZoom(this.value)" title="Zoom Palette">
+            
+            <div>
+                <button onclick="toggleTrayView()" title="Toggle Grid/List" style="background:transparent; border:none; color:#666; cursor:pointer; margin-right:5px;">
+                    <i class="fa-solid fa-table-cells" id="tray-toggle-icon"></i>
+                </button>
+                <button onclick="resetPalette()" style="background:transparent; border:none; color:#666; cursor:pointer;" title="Reset Defaults">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="tray-list" ondragstart="handlePaletteDragStart(event)"></div>
+
+        <div style="padding:10px; color:#555; font-size:0.75em; text-align:center; border-top:1px solid #333">
+            Drag to Timeline.<br>Drag right edge to extend.<br>Alt+Scroll for Tracks.
+        </div>
+    </aside>
+
+    <div class="resizer resizer-v" onmousedown="startResize(event, 'left')"><i class="fa-solid fa-grip-lines-vertical" style="font-size:0.7em; color:#444;"></i></div>
+
+    <!-- CENTER PANEL -->
+    <main id="center-panel">
+        <div id="game-stage">
+            <div id="scene-wrapper">
+                <div id="bg-layer" class="layer"></div>
+                <div id="media-layer" class="layer"></div>
+                <div id="sprite-layer" class="layer"></div>
+            </div>
+            
+            <div id="ui-layer" class="layer">
+                <div id="dialogue-box">
+                    <div id="speaker-name"></div>
+                    <div id="dialogue-text"></div>
+                </div>
+                <div id="choice-menu"></div>
+            </div>
+
+            <div id="gizmo-layer">
+                <div id="gizmo-box" onmousedown="startGizmoDrag(event, 'move')">
+                    <div class="gz-handle gz-tl gz-scale" onmousedown="startGizmoDrag(event, 'scale')"></div>
+                    <div class="gz-handle gz-tr gz-scale" onmousedown="startGizmoDrag(event, 'scale')"></div>
+                    <div class="gz-handle gz-bl gz-scale" onmousedown="startGizmoDrag(event, 'scale')"></div>
+                    <div class="gz-handle gz-br gz-scale" onmousedown="startGizmoDrag(event, 'scale')"></div>
+                    <div class="gz-rot-stick"></div>
+                    <div class="gz-rot" onmousedown="startGizmoDrag(event, 'rotate')"></div>
+                </div>
+            </div>
+
+            <div id="audio-container" style="display:none;"></div>
+            <div id="status-indicator" style="position:absolute; top:15px; right:15px; font-family:monospace; color:lime; font-weight:bold;"></div>
+        </div>
+    </main>
+
+    <div class="resizer resizer-v right" onmousedown="startResize(event, 'right')"><i class="fa-solid fa-grip-lines-vertical" style="font-size:0.7em; color:#444;"></i></div>
+
+    <!-- RIGHT PANEL -->
+    <aside id="right-panel">
+        <div class="panel-header" style="padding:12px;">PROPERTIES</div>
+        <div id="inspector-content"></div>
+    </aside>
+
+    <div class="resizer resizer-h" onmousedown="startResize(event, 'bottom')"><i class="fa-solid fa-grip-lines" style="font-size:0.7em; color:#444;"></i></div>
+
+    <!-- BOTTOM TIMELINE -->
+    <footer id="timeline-panel" onwheel="handleTimelineWheel(event)">
+        <div id="timeline-header">
+            <div><span style="font-weight:bold; color:#888; font-size:0.9em;">TIMELINE</span></div>
+            <div class="tl-controls">
+                <button class="tl-btn" onclick="doUndo()" id="btn-undo" title="Undo (Ctrl+Z)"><i class="fa-solid fa-rotate-left"></i></button>
+                <button class="tl-btn play-btn" onclick="toggleRun()" id="btn-play" title="Play/Stop (Space)"><i class="fa-solid fa-play"></i></button>
+                <button class="tl-btn" onclick="doRedo()" id="btn-redo" title="Redo (Ctrl+Y)"><i class="fa-solid fa-rotate-right"></i></button>
+            </div>
+            <div style="text-align:right;"><span>Scroll: Pan | Alt+Scroll: V-Scroll | Ctrl: Zoom</span></div>
+        </div>
+        <div id="timeline-scroll-area" ondragover="allowDrop(event)" ondrop="handleTimelineDrop(event)">
+            <div id="timeline-grid">
+                <div id="tl-playhead"></div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- CONTEXT MENU -->
+    <div id="context-menu" onclick="event.stopPropagation()">
+        <div class="ctx-item" id="ctx-copy" onclick="ctxAction('copy')">
+            <span><i class="fa-solid fa-copy"></i> Copy</span><span class="ctx-shortcut">Ctrl+C</span>
+        </div>
+        <div class="ctx-item" id="ctx-paste" onclick="ctxAction('paste')">
+            <span><i class="fa-solid fa-paste"></i> Paste</span><span class="ctx-shortcut">Ctrl+V</span>
+        </div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item" id="ctx-del" onclick="ctxAction('delete')">
+            <span><i class="fa-solid fa-trash-can"></i> Delete</span><span class="ctx-shortcut">Del</span>
+        </div>
+    </div>
+
+    <!-- INITIALIZATION SCRIPT -->
+    <script>
+        // INJECT SERVER DATA
+        // We use SERVER_EPISODE_ID because we are editing an episode now
+        const SERVER_EPISODE_ID = <%= episodeId %>;
+        const SERVER_PROJECT_ID = <%= projectId %>;
+        
+        // Inject Assets (or empty array)
+        const SERVER_ASSETS = <%- assetsJSON && assetsJSON.length > 0 ? assetsJSON : '[]' %>;
+        
+        // Inject Draft Data (or null)
+        const SERVER_DATA = <%- projectJSON ? projectJSON : 'null' %>;
+    </script>
+
+    <!-- LOAD EDITOR LOGIC -->
+    <script src="/js/editor.js"></script>
+</body>
+</html>

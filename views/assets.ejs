@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Assets - <%= project.name %></title>
+    <style>
+        body { background: #121212; color: #eee; font-family: sans-serif; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+        img { height: 50px; }
+    </style>
+</head>
+<body>
+    <a href="/dashboard" style="color:#aaa;">&larr; Back</a>
+    <h1>Assets: <%= project.name %></h1>
+    
+    <div style="background:#1e1e1e; padding:20px; border:1px solid #333;">
+        <h3>Upload New Asset via Discord Bot</h3>
+        <form action="/project/<%= project.id %>/upload" method="POST" enctype="multipart/form-data">
+            <input type="text" name="name" placeholder="Asset Name" required>
+            
+            <select name="type">
+                <!-- Images can be BG or Sprite -->
+                <option value="bg">Image: Background</option>
+                <option value="sprite">Image: Character</option>
+                <!-- Logic in server handles Audio/Video detection -->
+                <option value="audio">Audio</option>
+                <option value="video">Video</option>
+            </select>
+            
+            <input type="file" name="file" required accept="image/*,video/*,audio/*">
+            <button type="submit">Upload & Convert</button>
+        </form>
+    </div>
+
+    <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Preview</th><th>Discord URL</th></tr></thead>
+        <tbody>
+            <% assets.forEach(a => { %>
+                <tr>
+                    <td><%= a.name %></td>
+                    <td><%= a.type %></td>
+                    <td>
+                        <% if(a.type === 'bg' || a.type === 'sprite') { %>
+                            <img src="<%= a.url %>">
+                        <% } else { %>
+                            -
+                        <% } %>
+                    </td>
+                    <td style="font-size:0.8em; color:#666;"><%= a.url %></td>
+                </tr>
+            <% }) %>
+        </tbody>
+    </table>
+</body>
+</html>
