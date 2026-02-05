@@ -315,6 +315,14 @@ app.get('/play/:episodeId', (req, res) => {
     const prevEp = db.prepare('SELECT id FROM episodes WHERE project_id = ? AND episode_number < ? AND published_data IS NOT NULL ORDER BY episode_number DESC LIMIT 1').get(project.id, episode.episode_number);
     const nextEp = db.prepare('SELECT id FROM episodes WHERE project_id = ? AND episode_number > ? AND published_data IS NOT NULL ORDER BY episode_number ASC LIMIT 1').get(project.id, episode.episode_number);
 
+    let customCSS = '';
+    try {
+        const data = JSON.parse(episode.published_data);
+        if(data.css) customCSS = data.css;
+    } catch(e) {
+        console.error("Error parsing episode JSON for CSS:", e);
+    }
+
     res.render('player', {
         episodeJSON: episode.published_data,
         assetsJSON: JSON.stringify(assets),
@@ -327,7 +335,8 @@ app.get('/play/:episodeId', (req, res) => {
         nav: {
             prev: prevEp ? prevEp.id : null,
             next: nextEp ? nextEp.id : null
-        }
+        },
+        customCSS: customCSS
     });
 });
 
