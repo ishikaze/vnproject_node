@@ -2,20 +2,44 @@
 <html>
 <head>
     <title><%= project.title %></title>
-    <style>body { background: #121212; color: #eee; font-family: sans-serif; padding: 40px; text-align: center; } a {color: #007acc}</style>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: #121212; color: #eee; font-family: sans-serif; padding: 40px; text-align: center; } 
+        a {color: #007acc; text-decoration: none;}
+        .meta-tag { display: inline-block; background: #222; padding: 5px 10px; border-radius: 4px; font-size: 0.9em; color: #aaa; margin: 0 5px; }
+        .comment-card { background: #1e1e1e; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333; text-align: left; }
+        .badge { font-size: 0.75em; padding: 2px 6px; border-radius: 4px; margin-left: 5px; vertical-align: middle; }
+        .badge-rating { background: rgba(255, 215, 0, 0.2); color: gold; border: 1px solid gold; }
+        .badge-like { background: rgba(232, 67, 147, 0.2); color: #e84393; border: 1px solid #e84393; }
+        .comment-input { width: 100%; background: #111; border: 1px solid #444; color: white; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+    </style>
 </head>
 <body>
-    <a href="/">Back to Home</a>
-    <h1><%= project.title %></h1>
-    <p>By <%= project.username %></p>
-    <p><%= project.description %></p>
+    <a href="/">&larr; Back to Home</a>
+    
+    <h1 style="margin-bottom: 5px;"><%= project.title %></h1>
+    <p style="margin-top: 0; color: #888;">By <%= project.display_name %> (<%= project.username %>)</p>
+    
+    <!-- STATS BAR -->
+    <div style="margin: 15px 0;">
+        <span class="meta-tag"><i class="fa-solid fa-eye"></i> <%= project.viewCount %> Views</span>
+        <span class="meta-tag"><i class="fa-solid fa-heart"></i> <%= project.likeCount %> Likes</span>
+        <span class="meta-tag">
+            <i class="fa-solid fa-star"></i> 
+            <%= project.rating > 0 ? project.rating : 'NR' %> / 5
+        </span>
+        <span class="meta-tag"><i class="fa-solid fa-calendar"></i> <%= new Date(project.created_at).toLocaleDateString() %></span>
+    </div>
 
-    <hr style="border-color: #333; width: 50%;">
+    <p style="max-width: 600px; margin: 20px auto; line-height: 1.5;"><%= project.description %></p>
+
+    <hr style="border-color: #333; width: 50%; margin: 30px auto;">
 
     <h3>Episodes</h3>
     <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
         <% episodes.forEach(ep => { %>
-            <a href="/play/<%= ep.id %>" style="background: #1e1e1e; padding: 15px 30px; border: 1px solid #333; border-radius: 5px; text-decoration: none; width: 300px;">
+            <a href="/play/<%= ep.id %>" style="background: #1e1e1e; padding: 15px 30px; border: 1px solid #333; border-radius: 5px; width: 300px; transition: 0.2s;">
                 Ep. <%= ep.episode_number %>: <%= ep.title %>
             </a>
         <% }) %>
@@ -23,5 +47,69 @@
             <p>No episodes released yet.</p>
         <% } %>
     </div>
+    <div style="max-width: 800px; margin: 40px auto; padding: 0 20px;">
+    <hr style="border-color: #333; margin: 40px 0;">
+    
+    <h3>Series Discussion</h3>
+    
+    <% if(user) { %>
+        <div style="margin-bottom: 30px;">
+            <textarea id="series-comment-text" class="comment-input" placeholder="What do you think of this series?"></textarea>
+            <button onclick="postSeriesComment()" style="background:#007acc; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer;">Post Comment</button>
+        </div>
+    <% } else { %>
+        <p style="color:#888">Please <a href="/login" style="color:#007acc">log in</a> to join the discussion.</p>
+    <% } %>
+
+    <div id="series-comments-list">
+        <!-- Comments will load here -->
+    </div>
+</div>
+
+<script>
+    const SERIES_ID = <%= project.id %>;
+
+    async function loadSeriesComments() {
+        const res = await fetch(`/api/comments/series/${SERIES_ID}`);
+        const comments = await res.json();
+        const list = document.getElementById('series-comments-list');
+        
+        if(comments.length === 0) {
+            list.innerHTML = '<p style="color:#666">No comments yet.</p>';
+            return;
+        }
+
+        list.innerHTML = comments.map(c => `
+            <div class="comment-card">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <div>
+                        <strong>${c.display_name} (${c.username})</strong>
+                        ${c.has_liked ? '<span class="badge badge-like"><i class="fa-solid fa-heart"></i> Liked</span>' : ''}
+                        ${c.user_avg_rating ? `<span class="badge badge-rating"><i class="fa-solid fa-star"></i> ${parseFloat(c.user_avg_rating).toFixed(1)}</span>` : ''}
+                    </div>
+                    <small style="color:#555">${new Date(c.created_at).toLocaleDateString()}</small>
+                </div>
+                <div style="color:#ccc">${c.text}</div>
+            </div>
+        `).join('');
+    }
+
+    async function postSeriesComment() {
+        const text = document.getElementById('series-comment-text').value;
+        if(!text) return;
+        const res = await fetch(`/api/comments/series/${SERIES_ID}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ text })
+        });
+        if(res.ok) {
+            document.getElementById('series-comment-text').value = '';
+            loadSeriesComments();
+        }
+    }
+
+    // Load on start
+    loadSeriesComments();
+</script>
 </body>
 </html>

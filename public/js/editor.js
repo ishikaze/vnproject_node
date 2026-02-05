@@ -1529,6 +1529,7 @@ async function toggleRun() {
 
     let runtimeSceneId = activeSceneId;
     let step = 0;
+    let maxStep = 0;
 
     while (isRunning && runUID === myRunID && scenes[runtimeSceneId]) {
 
@@ -1536,7 +1537,7 @@ async function toggleRun() {
         resetPreview();
 
         const currentBlocks = scenes[runtimeSceneId].blocks;
-        let maxStep = 0;
+        
         currentBlocks.forEach(b => { if (b.start + b.duration > maxStep) maxStep = b.start + b.duration; });
 
         while (step < maxStep + 1 && isRunning && runUID === myRunID) {
@@ -1648,6 +1649,13 @@ async function toggleRun() {
         head.style.display = 'none';
         resetPreview();
         if (selectedBlockId) previewInstant();
+
+        // --- NEW: TRIGGER END SCREEN ---
+        // If the timeline finished naturally (step > maxStep), show the end screen
+        if (step > maxStep && typeof window.showEndScreen === 'function') {
+            console.log("Game Finished. Showing End Screen.");
+            window.showEndScreen();
+        }
     }
 }
 

@@ -22,6 +22,24 @@
             <a href="/" style="color: #aaa; text-decoration: none;">View Site &rarr;</a>
         </div>
     </div>
+    <!-- PROFILE SETTINGS -->
+    <div style="background: #1e1e1e; padding: 15px; margin-bottom: 20px; border: 1px solid #333; border-radius: 5px; display: flex; align-items: center; gap: 20px;">
+        <div>
+            <div style="font-size: 0.8em; color: #aaa;">LOGGED IN AS</div>
+            <div style="font-weight: bold; font-size: 1.2em;"><%= user.username %></div>
+        </div>
+        
+        <form action="/api/user/update-profile" method="POST" style="display: flex; gap: 10px; align-items: flex-end;">
+            <div>
+                <div style="font-size: 0.8em; color: #aaa; margin-bottom: 4px;">DISPLAY NAME</div>
+                <input type="text" name="display_name" value="<%= user.display_name || user.username %>" required 
+                       style="background: #111; border: 1px solid #444; color: white; padding: 6px; border-radius: 4px;">
+            </div>
+            <button type="submit" style="background: #007acc; padding: 6px 12px; border: none; border-radius: 4px; color: white; cursor: pointer;">
+                Save
+            </button>
+        </form>
+    </div>
     <div style="background: #1e1e1e; padding: 15px; margin-bottom: 20px;">
         <h3>Start New Series</h3>
         <form action="/project/create" method="POST">

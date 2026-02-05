@@ -4,115 +4,155 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %></title>
-    <!-- FontAwesome (Needed for icons if used in UI) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Reuse your main styles -->
     <link rel="stylesheet" href="/css/style.css">
     
     <style>
         /* --- PLAYER MODE OVERRIDES --- */
-        
-        /* 1. Hide Editor Panels */
-        #top-bar, 
-        #left-panel, 
-        #right-panel, 
-        #timeline-panel, 
-        .resizer,
-        .resizer-v,
-        .resizer-h,
-        #context-menu,
-        #gizmo-layer { 
+        #top-bar, #left-panel, #right-panel, #timeline-panel, .resizer, .resizer-v, .resizer-h, #context-menu, #gizmo-layer { 
             display: none !important; 
         }
-
-        /* 2. Reset Body Layout (Remove Editor Grid) */
         body {
-            display: flex !important;
-            justify-content: center;
-            align-items: center;
-            background-color: #000;
-            margin: 0;
-            height: 100vh;
-            width: 100vw;
-            overflow: hidden;
+            display: flex !important; justify-content: center; align-items: center;
+            background-color: #000; margin: 0; height: 100vh; width: 100vw; overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
+        #center-panel { grid-area: auto; width: 100%; height: 100%; background: #000; border: none; display: flex; align-items: center; justify-content: center; }
+        #game-stage { box-shadow: none; pointer-events: auto; }
 
-        /* 3. Center Panel takes full screen */
-        #center-panel {
-            grid-area: auto;
-            width: 100%;
-            height: 100%;
-            background: #000;
-            border: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        /* --- END SCREEN OVERLAY --- */
+        #end-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.95); z-index: 10000;
+            display: none; flex-direction: column; align-items: center;
+            justify-content: flex-start; padding-top: 40px; color: white; overflow-y: auto;
         }
+        .end-container { width: 650px; max-width: 95%; text-align: center; padding-bottom: 60px; }
+        
+        /* Star Rating UI */
+        .rating-wrapper { position: relative; display: inline-block; font-size: 50px; cursor: pointer; color: #333; margin: 15px 0; }
+        .rating-upper { color: gold; pointer-events: none; position: absolute; top: 0; left: 0; overflow: hidden; white-space: nowrap; width: 0%; transition: width 0.1s; }
+        .rating-score-display { display:none; font-size: 1.5rem; margin-top: 5px; color: gold; font-weight: bold; }
 
-        /* 4. Ensure Stage is visible and interactive */
-        #game-stage {
-            box-shadow: none; /* Remove editor shadow */
-            pointer-events: auto;
+        /* Actions */
+        .action-row { display: flex; gap: 15px; justify-content: center; margin: 25px 0; }
+        .act-btn {
+            background: #252525; border: 1px solid #444; color: white; padding: 12px 24px;
+            border-radius: 8px; cursor: pointer; font-size: 1rem; display: flex; align-items: center; gap: 10px; transition: 0.2s;
         }
+        .act-btn:hover { background: #333; border-color: #666; }
+        .act-btn.liked { color: #e84393; border-color: #e84393; background: rgba(232, 67, 147, 0.1); }
 
-        /* 5. Custom Customizations injected from Server */
+        /* Navigation */
+        .nav-row { display: flex; justify-content: space-between; align-items: center; margin-top: 40px; border-top: 1px solid #333; padding-top: 25px; }
+        .nav-link { background: #007acc; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; }
+        .nav-link.secondary { background: #444; }
+        .nav-link.disabled { background: #222; color: #555; pointer-events: none; }
+
+        /* Comments */
+        .comments-section { text-align: left; margin-top: 40px; background: #111; padding: 25px; border-radius: 12px; border: 1px solid #222; }
+        .comment-input-area { margin-bottom: 25px; }
+        .comment-box { width: 100%; padding: 12px; background: #050505; border: 1px solid #333; color: white; border-radius: 6px; resize: vertical; min-height: 80px; margin-bottom: 10px; }
+        .comment-item { border-bottom: 1px solid #222; padding: 15px 0; }
+        .comment-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 0.9rem; }
+        .badge { font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid; }
+
+        .comment-card { background: #1e1e1e; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333; text-align: left; }
+        .badge { font-size: 0.75em; padding: 2px 6px; border-radius: 4px; margin-left: 5px; vertical-align: middle; }
+        .badge-rating { background: rgba(255, 215, 0, 0.2); color: gold; border: 1px solid gold; }
+        .badge-like { background: rgba(232, 67, 147, 0.2); color: #e84393; border: 1px solid #e84393; }
+        .comment-input { width: 100%; background: #111; border: 1px solid #444; color: white; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+
         <%- episodeJSON && episodeJSON.css ? episodeJSON.css : '' %>
     </style>
 </head>
 <body>
 
-    <!-- MAIN GAME CONTAINER -->
     <main id="center-panel">
         <div id="game-stage">
-            <div id="scene-wrapper">
-                <div id="bg-layer" class="layer"></div>
-                <div id="media-layer" class="layer"></div>
-                <div id="sprite-layer" class="layer"></div>
-            </div>
-            
-            <div id="ui-layer" class="layer">
-                <div id="dialogue-box">
-                    <div id="speaker-name"></div>
-                    <div id="dialogue-text"></div>
-                </div>
-                <div id="choice-menu"></div>
-            </div>
-
-            <!-- Audio Container -->
+            <div id="scene-wrapper"><div id="bg-layer" class="layer"></div><div id="media-layer" class="layer"></div><div id="sprite-layer" class="layer"></div></div>
+            <div id="ui-layer" class="layer"><div id="dialogue-box"><div id="speaker-name"></div><div id="dialogue-text"></div></div><div id="choice-menu"></div></div>
             <div id="audio-container" style="display:none;"></div>
-            
-            <!-- Hidden Status (Optional) -->
             <div id="status-indicator" style="display:none"></div>
         </div>
     </main>
 
-    <!-- 
-      HIDDEN DOM ELEMENTS 
-      These are required because editor.js tries to access them.
-    -->
+    <!-- === END SCREEN === -->
+    <div id="end-screen">
+        <div class="end-container">
+            <h1 style="margin-bottom: 0;">Episode Finished</h1>
+
+            <!-- RATING -->
+            <div style="margin: 30px 0;">
+                <div class="rating-wrapper" id="star-container" onmousemove="handleStarHover(event)" onclick="saveRating(event)" onmouseleave="resetStars()">
+                    <div style="display:flex;"><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i></div>
+                    <div class="rating-upper" id="star-fill"><div style="display:flex;"><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i></div></div>
+                </div>
+                <div class="rating-score-display" id="rating-text">Tap stars to rate</div>
+            </div>
+
+            <!-- ACTION BUTTONS -->
+            <div class="action-row">
+                <button id="like-btn" class="act-btn <%= isLiked ? 'liked' : '' %>" onclick="toggleLike()">
+                    <i class="<%= isLiked ? 'fa-solid' : 'fa-regular' %> fa-heart"></i> Like
+                </button>
+                <button class="act-btn" onclick="addToCollection()">
+                    <i class="fa-solid fa-plus"></i> Add to Collection
+                </button>
+            </div>
+
+            <!-- NAVIGATION -->
+            <div class="nav-row">
+                <% if(nav.prev) { %>
+                    <a href="/play/<%= nav.prev %>" class="nav-link">&larr; Previous</a>
+                <% } else { %>
+                    <span class="nav-link disabled">&larr; Previous</span>
+                <% } %>
+
+                <a href="/series/<%= projectId %>" class="nav-link secondary">Back to Series Page</a>
+
+                <% if(nav.next) { %>
+                    <a href="/play/<%= nav.next %>" class="nav-link">Next &rarr;</a>
+                <% } else { %>
+                    <span class="nav-link disabled">Next &rarr;</span>
+                <% } %>
+            </div>
+
+            <!-- COMMENTS -->
+            <div class="comments-section">
+                <h3>Episode Comments</h3>
+                <% if(user) { %>
+                    <div class="comment-input-area">
+                        <textarea id="comment-text" class="comment-box" placeholder="What did you think of this episode?"></textarea>
+                        <button class="act-btn" style="width: 100%; justify-content: center; background: #007acc;" onclick="submitComment()">Post Comment</button>
+                    </div>
+                <% } else { %>
+                    <p style="text-align: center; color: #666;"><a href="/login" style="color: #007acc;">Log in</a> to rate and comment.</p>
+                <% } %>
+                <div id="comment-list">Loading comments...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HIDDEN DOM ELEMENTS -->
     <div style="display:none;">
         <div id="timeline-scroll-area"><div id="timeline-grid"><div id="tl-playhead"></div></div></div>
-        <div id="inspector-content"></div>
-        <div id="scene-list"></div>
-        <div id="tray-list"></div>
-        <input id="tray-zoom-slider">
-        <input id="file-input">
-        <button id="btn-undo"></button>
-        <button id="btn-redo"></button>
-        <button id="btn-play"></button> 
+        <div id="inspector-content"></div><div id="scene-list"></div><div id="tray-list"></div>
+        <input id="tray-zoom-slider"><input id="file-input">
+        <button id="btn-undo"></button><button id="btn-redo"></button><button id="btn-play"></button> 
     </div>
 
     <script>
-        // DATA INJECTION
         const SERVER_DATA = <%- episodeJSON ? episodeJSON : 'null' %>;
         const SERVER_ASSETS = <%- assetsJSON && assetsJSON.length > 0 ? assetsJSON : '[]' %>;
-        const PROJECT_ID = <%= projectId %>; // Correctly matching the key from res.render
+        const PROJECT_ID = <%= projectId %>;
+        const EP_ID = <%= episodeId %>;
+        const USER_ID = "<%= user ? user.id : '' %>";
+        let userRating = <%= userRating || 0 %>;
     </script>
 
-    <!-- LOGIC ENGINE -->
     <script src="/js/editor.js"></script>
 
-    <!-- AUTO-START & REDIRECT SCRIPT -->
     <script>
         window.onload = () => {
             if (!SERVER_DATA) {
@@ -120,7 +160,6 @@
                 return;
             }
 
-            // 1. Load Data into memory
             if (SERVER_DATA.scenes) {
                 scenes = SERVER_DATA.scenes;
                 activeSceneId = SERVER_DATA.activeSceneId || Object.keys(scenes)[0];
@@ -132,29 +171,140 @@
             resizeStage();
             window.addEventListener('resize', resizeStage);
 
-            // 2. Disable Keyboard Shortcuts (prevent Undo/Redo/Delete/Save)
             document.onkeydown = (e) => {
+                // 1. Always allow F11 (Fullscreen) and F5 (Refresh)
                 if(e.key === 'F11' || e.key === 'F5') return;
+
+                // 2. NEW: If the user is currently typing in a box, let them type!
+                const tag = e.target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+                // 3. Otherwise, prevent default (stops spacebar from scrolling, etc.)
                 e.preventDefault();
                 e.stopPropagation();
             };
 
-            // 3. AUTO PLAY & REDIRECT
             console.log("Starting Episode...");
-            
-            // We use a small timeout to let the browser stabilize
             setTimeout(async () => {
                 if(!isRunning) {
-                    // Because toggleRun is an ASYNC function, we can await it.
-                    // It will finish only when the playback loop ends naturally.
                     await toggleRun();
-
-                    // 4. REDIRECT
-                    console.log("Episode finished. Redirecting...");
-                    window.location.href = "/series/" + PROJECT_ID;
+                    
+                    // SHOW END SCREEN INSTEAD OF REDIRECT
+                    console.log("Episode finished. Showing end screen...");
+                    showEndScreen();
                 }
             }, 500);
         };
+
+        function showEndScreen() {
+            document.getElementById('end-screen').style.display = 'flex';
+            resetStars();
+            loadComments();
+        }
+
+        /* --- FEATURE LOGIC --- */
+
+        // Star Rating 
+        function handleStarHover(e) {
+            if(!USER_ID) return;
+            const container = document.getElementById('star-container');
+            const rect = container.getBoundingClientRect();
+            let val = ((e.clientX - rect.left) / rect.width) * 5;
+            val = Math.ceil(val); 
+    
+            if(val < 1) val = 1; 
+            if(val > 5) val = 5;
+            updateStarVisuals(val);
+            document.getElementById('rating-text').innerText = val.toFixed(1);
+        }
+
+        function updateStarVisuals(val) {
+            document.getElementById('star-fill').style.width = (val / 5 * 100) + '%';
+        }
+
+        function resetStars() {
+            updateStarVisuals(userRating);
+            document.getElementById('rating-text').innerText = userRating > 0 ? userRating.toFixed(1) : 'Tap stars to rate';
+        }
+
+        async function saveRating(e) {
+            if(!USER_ID) return alert("Log in to rate!");
+            const score = parseFloat(document.getElementById('rating-text').innerText);
+            userRating = score;
+            await fetch(`/api/rate/episode/${EP_ID}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ score })
+            });
+            document.getElementById('rating-text').style.color = '#00ff00';
+            setTimeout(() => document.getElementById('rating-text').style.color = 'gold', 1000);
+        }
+
+        // Like Toggle
+        async function toggleLike() {
+            if(!USER_ID) return alert("Log in to like!");
+            const btn = document.getElementById('like-btn');
+            const icon = btn.querySelector('i');
+            const res = await fetch(`/api/like/episode/${EP_ID}`, { method: 'POST' });
+            const data = await res.json();
+            
+            if(data.liked) {
+                btn.classList.add('liked');
+                icon.className = 'fa-solid fa-heart';
+            } else {
+                btn.classList.remove('liked');
+                icon.className = 'fa-regular fa-heart';
+            }
+        }
+
+        // Collection
+        function addToCollection() {
+            if(!USER_ID) return alert("Log in to save to collections!");
+            // This is handled by server via Like for the default collection, 
+            // or you can add a specific collection picker here later.
+            alert("Added to your Liked Collection!");
+        }
+
+        // Comments
+        async function loadComments() {
+            const list = document.getElementById('comment-list');
+            const res = await fetch(`/api/comments/episode/${EP_ID}`);
+            const comments = await res.json();
+            
+            if(comments.length === 0) {
+                list.innerHTML = '<p style="color:#666; font-style:italic;">No comments yet.</p>';
+                return;
+            }
+
+            list.innerHTML = comments.map(c => `
+                <div class="comment-item">
+                    <div class="comment-meta">
+                        <strong style="color: #007acc;">${c.display_name} (${c.username})</strong>
+                        ${c.user_rating ? `<span class="badge" style="border-color: gold; color: gold;"><i class="fa-solid fa-star"></i> ${c.user_rating.toFixed(1)}</span>` : ''}
+                        ${c.user_liked ? `<span class="badge" style="border-color: #e84393; color: #e84393;"><i class="fa-solid fa-heart"></i> Liked</span>` : ''}
+                        <span style="color: #444; margin-left: auto;">${new Date(c.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div style="color: #ccc; line-height: 1.4;">${c.text}</div>
+                </div>
+            `).join('');
+        }
+
+        async function submitComment() {
+            const box = document.getElementById('comment-text');
+            const text = box.value.trim();
+            if(!text) return;
+
+            const res = await fetch(`/api/comments/episode/${EP_ID}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ text })
+            });
+            
+            if(res.ok) {
+                box.value = '';
+                loadComments();
+            }
+        }
     </script>
 </body>
 </html>

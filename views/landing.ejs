@@ -22,20 +22,14 @@
     <header>
         <h1><i class="fa-solid fa-book"></i> VNProject</h1>
         <div>
-        <% if(user) { %>
-            <!-- ADD THIS BLOCK HERE -->
-            <% if(user.is_admin) { %>
-                <a href="/admin" class="btn" style="background: #e17055; margin-right: 10px;">
-                    <i class="fa-solid fa-shield-halved"></i> Admin Panel
-                </a>
+            <% if(user) { %>
+                <a href="/collections" class="btn" style="background:#2d3436; margin-right:5px;">Collections</a>
+                <a href="/dashboard" class="btn">My Dashboard</a>
+                <a href="/logout" style="margin-left: 10px; color: #aaa;">Logout</a>
+            <% } else { %>
+                <a href="/auth/discord" class="btn"><i class="fa-brands fa-discord"></i> Login</a>
             <% } %>
-            
-            <a href="/dashboard" class="btn">My Dashboard</a>
-            <a href="/logout" style="margin-left: 10px; color: #aaa;">Logout</a>
-        <% } else { %>
-            <a href="/auth/discord" class="btn"><i class="fa-brands fa-discord"></i> Login</a>
-        <% } %>
-    </div>
+        </div>
     </header>
 
     <h2>Latest Visual Novels</h2>
@@ -48,7 +42,7 @@
                 </div>
                 <div class="card-content">
                     <h3><%= p.title %></h3>
-                    <p>By <%= p.username %></p>
+                    <p>By <%= p.display_name %> (<%= p.username %>)</p>
                     <p style="font-style: italic; margin-top: 5px;"><%= p.description || 'No description.' %></p>
                 </div>
             </a>

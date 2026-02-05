@@ -9,6 +9,7 @@ const sharp = require('sharp');
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const app = express();
 
@@ -29,8 +30,17 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // --- 3. PASSPORT AUTH SETUP ---
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((obj, done) => done(null, obj));
+passport.serializeUser((user, done) => {
+    done(null, user.id);
+});
+passport.deserializeUser((id, done) => {
+    try {
+        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+        done(null, user);
+    } catch (err) {
+        done(err, null);
+    }
+});
 
 passport.use(new DiscordStrategy({
     clientID: process.env.DISCORD_CLIENT_ID,
@@ -39,25 +49,14 @@ passport.use(new DiscordStrategy({
     scope: ['identify']
 }, (accessToken, refreshToken, profile, done) => {
     
-    // Check Admin Status based on .env
-    const isAdmin = ADMIN_IDS.includes(profile.id) ? 1 : 0;
-
-    // Upsert User
     const stmt = db.prepare(`
-        INSERT INTO users (id, username, is_admin) 
-        VALUES (@id, @username, @is_admin)
-        ON CONFLICT(id) DO UPDATE SET 
-        username=@username, 
-        is_admin=@is_admin
+        INSERT INTO users (id, username, display_name) 
+        VALUES (?, ?, ?) 
+        ON CONFLICT(id) DO UPDATE SET username = excluded.username
     `);
+    stmt.run(profile.id, profile.username, profile.username);
     
-    stmt.run({
-        id: profile.id, 
-        username: profile.username,
-        is_admin: isAdmin
-    });
-
-    // Retrieve full user object (including is_banned)
+    // Fetch the full user object (including display_name) to store in session
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(profile.id);
     return done(null, user);
 }));
@@ -164,7 +163,7 @@ app.get('/admin', checkAdmin, (req, res) => {
     const whitelistEnabled = whitelistSetting && whitelistSetting.value === '1';
 
     const users = db.prepare("SELECT * FROM users ORDER BY is_admin DESC").all();
-    const projects = db.prepare("SELECT p.*, u.username FROM projects p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC").all();
+    const projects = db.prepare("SELECT p.*, u.username, u.display_name FROM projects p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC").all();
     const assets = db.prepare("SELECT a.*, u.username FROM assets a JOIN users u ON a.user_id = u.id ORDER BY a.id DESC LIMIT 50").all();
 
     res.render('admin', { whitelistEnabled, users, projects, assets });
@@ -214,7 +213,7 @@ app.post('/admin/asset/:id/delete', checkAdmin, (req, res) => {
 // --- 8. STANDARD ROUTES ---
 
 app.get('/', (req, res) => {
-    const projects = db.prepare(`SELECT p.*, u.username FROM projects p JOIN users u ON p.user_id = u.id WHERE p.is_published = 1 ORDER BY p.created_at DESC`).all();
+    const projects = db.prepare(`SELECT p.*, u.username, u.display_name FROM projects p JOIN users u ON p.user_id = u.id WHERE p.is_published = 1 ORDER BY p.created_at DESC`).all();
     res.render('landing', { projects, user: req.user });
 });
 
@@ -239,23 +238,79 @@ app.post('/project/create', checkAuth, (req, res) => {
 });
 
 app.get('/series/:id', (req, res) => {
-    const project = db.prepare('SELECT p.*, u.username FROM projects p JOIN users u ON p.user_id = u.id WHERE p.id = ?').get(req.params.id);
-    if (!project || (!project.is_published && (!req.user || req.user.id !== project.user_id))) return res.status(404).send("Project not found.");
+    const project = db.prepare('SELECT p.*, u.username, u.display_name FROM projects p JOIN users u ON p.user_id = u.id WHERE p.id = ?').get(req.params.id);
+    
+    if (!project || (!project.is_published && (!req.user || req.user.id !== project.user_id))) {
+        return res.status(404).send("Project not found or private.");
+    }
+
+    registerView(project.id, req);
+
+    const viewStats = db.prepare(`
+        SELECT COUNT(*) as count FROM views 
+        WHERE project_id = ?
+    `).get(project.id);
+    project.viewCount = viewStats.count;
+
+    const likeStats = db.prepare('SELECT COUNT(DISTINCT user_id) as count FROM likes WHERE project_id = ?').get(project.id);
+    project.likeCount = likeStats.count;
+
+    const userAverages = db.prepare(`
+        SELECT AVG(score) as avg_score 
+        FROM ratings 
+        WHERE project_id = ? 
+        GROUP BY user_id
+    `).all(project.id);
+
+    let rating = 0;
+    if (userAverages.length > 0) {
+        const sum = userAverages.reduce((a, b) => a + b.avg_score, 0);
+        rating = (sum / userAverages.length).toFixed(1); // One decimal place (e.g., 4.5)
+    }
+    project.rating = rating;
+
     const episodes = db.prepare('SELECT id, title, episode_number FROM episodes WHERE project_id = ? AND published_data IS NOT NULL ORDER BY episode_number ASC').all(project.id);
+
     res.render('series_public', { project, episodes, user: req.user });
 });
 
+// 3. PUBLIC PLAYER (Play Episode) - UPDATED FOR END SCREEN
 app.get('/play/:episodeId', (req, res) => {
     const episode = db.prepare('SELECT * FROM episodes WHERE id = ?').get(req.params.episodeId);
-    if (!episode || !episode.published_data) return res.status(404).send("Episode not found.");
+    if (!episode || !episode.published_data) return res.status(404).send("Episode not found or not published.");
+
     const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(episode.project_id);
     const assets = db.prepare('SELECT * FROM assets WHERE project_id = ?').all(project.id);
+    
+    // 1. User Context (Like & Rating)
+    let isLiked = false;
+    let userRating = 0;
+    
+    if(req.user) {
+        const likeCheck = db.prepare('SELECT 1 FROM likes WHERE user_id = ? AND episode_id = ?').get(req.user.id, episode.id);
+        isLiked = !!likeCheck;
+        
+        const rateCheck = db.prepare('SELECT score FROM ratings WHERE user_id = ? AND episode_id = ?').get(req.user.id, episode.id);
+        if(rateCheck) userRating = rateCheck.score;
+    }
+
+    // 2. Navigation (Prev/Next) based on Episode Number
+    const prevEp = db.prepare('SELECT id FROM episodes WHERE project_id = ? AND episode_number < ? AND published_data IS NOT NULL ORDER BY episode_number DESC LIMIT 1').get(project.id, episode.episode_number);
+    const nextEp = db.prepare('SELECT id FROM episodes WHERE project_id = ? AND episode_number > ? AND published_data IS NOT NULL ORDER BY episode_number ASC LIMIT 1').get(project.id, episode.episode_number);
 
     res.render('player', {
         episodeJSON: episode.published_data,
         assetsJSON: JSON.stringify(assets),
         title: `${project.title} - ${episode.title}`,
-        projectId: project.id
+        user: req.user,
+        episodeId: episode.id,
+        projectId: project.id,
+        isLiked: isLiked,
+        userRating: userRating,
+        nav: {
+            prev: prevEp ? prevEp.id : null,
+            next: nextEp ? nextEp.id : null
+        }
     });
 });
 
@@ -332,6 +387,249 @@ app.post('/project/:id/upload', checkAuth, upload.single('file'), async (req, re
         console.error("Processing failed:", err);
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         res.status(500).send("Error processing file.");
+    }
+});
+
+
+// --- USER PROFILE ROUTES ---
+app.post('/api/user/update-profile', checkAuth, (req, res) => {
+    const newName = req.body.display_name.trim();
+    if (!newName) return res.redirect('/dashboard');
+
+    // 1. Update the database
+    db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(newName, req.user.id);
+    
+    // 2. Force the session to save the changes before redirecting
+    req.session.save((err) => {
+        if (err) console.error("Session save error:", err);
+        res.redirect('/dashboard');
+    });
+});
+
+const ensureLikedCollection = (userId) => {
+    let col = db.prepare('SELECT id FROM collections WHERE user_id = ? AND is_system = 1').get(userId);
+    if (!col) {
+        const info = db.prepare('INSERT INTO collections (user_id, name, is_system) VALUES (?, ?, 1)').run(userId, 'Liked Series');
+        return info.lastInsertRowid;
+    }
+    return col.id;
+};
+
+// Helper: Register View with 12h Cooldown
+function registerView(projectId, req) {
+    const userId = req.isAuthenticated() ? req.user.id : null;
+    
+    const viewerHash = crypto.createHash('sha256')
+        .update(req.ip + req.get('User-Agent'))
+        .digest('hex');
+
+    const existing = db.prepare(`
+        SELECT id FROM views
+        WHERE project_id = ?
+        AND (user_id = ? OR (user_id IS NULL AND viewer_hash = ?))
+        AND created_at > datetime('now', '-12 hours')
+    `).get(projectId, userId, viewerHash);
+
+    if (!existing) {
+        db.prepare(`
+            INSERT INTO views (project_id, viewer_hash, user_id)
+            VALUES (?, ?, ?)
+        `).run(projectId, viewerHash, userId);
+        // console.log(`[View] New view counted for Project ${projectId}`);
+    } else {
+        // console.log(`[View] Cooldown active for Project ${projectId} (No increment)`);
+    }
+}
+
+// --- COLLECTION ROUTES ---
+
+// 1. List All Collections
+app.get('/collections', checkAuth, (req, res) => {
+    ensureLikedCollection(req.user.id); // Create default if missing
+    const collections = db.prepare('SELECT * FROM collections WHERE user_id = ? ORDER BY is_system DESC, created_at DESC').all(req.user.id);
+    res.render('collections', { user: req.user, collections });
+});
+
+// 2. Create New Collection
+app.post('/collections/create', checkAuth, (req, res) => {
+    const name = req.body.name.trim();
+    if(name) {
+        db.prepare('INSERT INTO collections (user_id, name, is_system) VALUES (?, ?, 0)').run(req.user.id, name);
+    }
+    res.redirect('/collections');
+});
+
+// 3. Delete Collection (Custom ones only)
+app.post('/collections/:id/delete', checkAuth, (req, res) => {
+    db.prepare('DELETE FROM collections WHERE id = ? AND user_id = ? AND is_system = 0').run(req.params.id, req.user.id);
+    res.redirect('/collections');
+});
+
+// 4. View Specific Collection
+app.get('/collection/:id', checkAuth, (req, res) => {
+    const collection = db.prepare('SELECT * FROM collections WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if(!collection) return res.redirect('/collections');
+
+    // Fetch projects inside this collection
+    const projects = db.prepare(`
+        SELECT p.*, u.username, u.display_name 
+        FROM collection_items ci
+        JOIN projects p ON ci.project_id = p.id
+        JOIN users u ON p.user_id = u.id
+        WHERE ci.collection_id = ?
+        ORDER BY ci.added_at DESC
+    `).all(collection.id);
+
+    res.render('collection_view', { user: req.user, collection, projects });
+});
+
+// --- LIKE ROUTES ---
+
+// Toggle Like on an Episode
+app.post('/api/like/episode/:id', checkAuth, (req, res) => {
+    const episodeId = req.params.id;
+    const userId = req.user.id;
+
+    // 1. Get Project ID for this episode
+    const episode = db.prepare('SELECT project_id FROM episodes WHERE id = ?').get(episodeId);
+    if(!episode) return res.status(404).json({error: 'Episode not found'});
+
+    const projectId = episode.project_id;
+
+    // 2. Check if already liked
+    const existing = db.prepare('SELECT 1 FROM likes WHERE user_id = ? AND episode_id = ?').get(userId, episodeId);
+
+    if (existing) {
+        // UNLIKE logic
+        db.prepare('DELETE FROM likes WHERE user_id = ? AND episode_id = ?').run(userId, episodeId);
+        
+        // Check if user has ANY likes left in this series
+        const remaining = db.prepare('SELECT 1 FROM likes WHERE user_id = ? AND project_id = ?').get(userId, projectId);
+        
+        // If no likes left in this series, remove from "Liked Series" collection
+        if (!remaining) {
+            const colId = ensureLikedCollection(userId);
+            db.prepare('DELETE FROM collection_items WHERE collection_id = ? AND project_id = ?').run(colId, projectId);
+        }
+        
+        res.json({ liked: false });
+    } else {
+        // LIKE logic
+        db.prepare('INSERT INTO likes (user_id, project_id, episode_id) VALUES (?, ?, ?)').run(userId, projectId, episodeId);
+        
+        // Add to "Liked Series" collection (IGNORE keeps it if already there)
+        const colId = ensureLikedCollection(userId);
+        db.prepare('INSERT OR IGNORE INTO collection_items (collection_id, project_id) VALUES (?, ?)').run(colId, projectId);
+        
+        res.json({ liked: true });
+    }
+});
+
+// --- RATING ROUTES ---
+
+// Rate an Episode (1-5)
+app.post('/api/rate/episode/:id', checkAuth, (req, res) => {
+    const episodeId = req.params.id;
+    const userId = req.user.id;
+    const score = parseInt(req.body.score);
+
+    if (!score || score < 1 || score > 5) {
+        return res.status(400).json({ error: "Invalid score" });
+    }
+
+    // Get Project ID
+    const episode = db.prepare('SELECT project_id FROM episodes WHERE id = ?').get(episodeId);
+    if (!episode) return res.status(404).json({ error: "Episode not found" });
+
+    // UPSERT Rating (Insert or Update if exists)
+    db.prepare(`
+        INSERT INTO ratings (user_id, project_id, episode_id, score) 
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, episode_id) DO UPDATE SET score = excluded.score
+    `).run(userId, episode.project_id, episodeId, score);
+
+    res.json({ success: true });
+});
+
+// --- EPISODE COMMENT ROUTES ---
+
+// Get Comments for a specific Episode
+app.get('/api/comments/episode/:id', (req, res) => {
+    try {
+        const comments = db.prepare(`
+            SELECT c.*, u.display_name, u.username,
+                   r.score as user_rating,
+                   (SELECT 1 FROM likes l WHERE l.user_id = c.user_id AND l.episode_id = c.episode_id LIMIT 1) as user_liked
+            FROM comments c
+            JOIN users u ON c.user_id = u.id
+            LEFT JOIN ratings r ON r.user_id = c.user_id AND r.episode_id = c.episode_id
+            WHERE c.episode_id = ?
+            ORDER BY c.created_at DESC
+        `).all(req.params.id);
+        res.json(comments);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to fetch comments" });
+    }
+});
+
+// Post a Comment to an Episode
+app.post('/api/comments/episode/:id', checkAuth, (req, res) => {
+    const text = req.body.text.trim();
+    if (!text) return res.status(400).json({ error: "Comment cannot be empty" });
+
+    try {
+        const episode = db.prepare('SELECT project_id FROM episodes WHERE id = ?').get(req.params.id);
+        if (!episode) return res.status(404).json({ error: "Episode not found" });
+
+        db.prepare(`
+            INSERT INTO comments (user_id, project_id, episode_id, text)
+            VALUES (?, ?, ?, ?)
+        `).run(req.user.id, episode.project_id, req.params.id, text);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to post comment" });
+    }
+});
+
+// --- SERIES COMMENT ROUTES ---
+
+// Get Comments for the entire Series (Project-level)
+app.get('/api/comments/series/:id', (req, res) => {
+    try {
+        const comments = db.prepare(`
+            SELECT c.*, u.display_name, u.username,
+                   (SELECT AVG(score) FROM ratings r WHERE r.user_id = c.user_id AND r.project_id = c.project_id) as user_avg_rating,
+                   (SELECT 1 FROM likes l WHERE l.user_id = c.user_id AND l.project_id = c.project_id LIMIT 1) as has_liked
+            FROM comments c
+            JOIN users u ON c.user_id = u.id
+            WHERE c.project_id = ? AND c.episode_id IS NULL
+            ORDER BY c.created_at DESC
+        `).all(req.params.id);
+        res.json(comments);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to fetch series comments" });
+    }
+});
+
+// Post a Comment to the Series
+app.post('/api/comments/series/:id', checkAuth, (req, res) => {
+    const text = req.body.text.trim();
+    if (!text) return res.status(400).json({ error: "Comment cannot be empty" });
+
+    try {
+        db.prepare(`
+            INSERT INTO comments (user_id, project_id, episode_id, text)
+            VALUES (?, ?, NULL, ?)
+        `).run(req.user.id, req.params.id, text);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to post series comment" });
     }
 });
 
