@@ -213,7 +213,24 @@ app.post('/admin/asset/:id/delete', checkAdmin, (req, res) => {
 // --- 8. STANDARD ROUTES ---
 
 app.get('/', (req, res) => {
-    const projects = db.prepare(`SELECT p.*, u.username, u.display_name FROM projects p JOIN users u ON p.user_id = u.id WHERE p.is_published = 1 ORDER BY p.created_at DESC`).all();
+    // Aggregating all stats in one query
+    const projects = db.prepare(`
+        SELECT p.*, u.username, u.display_name,
+            (SELECT COUNT(*) FROM views v WHERE v.project_id = p.id) as view_count,
+            (SELECT COUNT(DISTINCT l.user_id) FROM likes l WHERE l.project_id = p.id) as like_count,
+            (SELECT COUNT(*) FROM comments com WHERE com.project_id = p.id) as comment_count,
+            (SELECT AVG(user_avg) FROM (
+                SELECT AVG(score) as user_avg 
+                FROM ratings r 
+                WHERE r.project_id = p.id 
+                GROUP BY r.user_id
+            )) as avg_rating
+        FROM projects p 
+        JOIN users u ON p.user_id = u.id 
+        WHERE p.is_published = 1 
+        ORDER BY p.created_at DESC
+    `).all();
+    
     res.render('landing', { projects, user: req.user });
 });
 

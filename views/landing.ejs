@@ -16,6 +16,31 @@
         p { color: #aaa; font-size: 0.9em; }
         a { text-decoration: none; color: inherit; }
         .btn { background: #007acc; color: white; padding: 8px 15px; border-radius: 4px; }
+        /* Stats Badges on Cards */
+        .card-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #333;
+        }
+
+        .stat-badge {
+            font-size: 0.75rem;
+            color: #888;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: #111;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #222;
+        }
+
+        .stat-badge i {
+            font-size: 0.8rem;
+        }
     </style>
 </head>
 <body>
@@ -43,7 +68,26 @@
                 <div class="card-content">
                     <h3><%= p.title %></h3>
                     <p>By <%= p.display_name %> (<%= p.username %>)</p>
-                    <p style="font-style: italic; margin-top: 5px;"><%= p.description || 'No description.' %></p>
+                    <p style="font-style: italic; margin-top: 5px; height: 1.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <%= p.description || 'No description.' %>
+                    </p>
+
+                    <!-- STATS BADGES -->
+                    <div class="card-stats">
+                        <div class="stat-badge views" title="Total Views">
+                            <i class="fa-solid fa-eye"></i> <%= p.view_count %>
+                        </div>
+                        <div class="stat-badge likes" title="Series Likes">
+                            <i class="fa-solid fa-heart"></i> <%= p.like_count %>
+                        </div>
+                        <div class="stat-badge rating" title="Average Rating">
+                            <i class="fa-solid fa-star"></i> 
+                            <%= p.avg_rating ? parseFloat(p.avg_rating).toFixed(1) : 'NR' %>
+                        </div>
+                        <div class="stat-badge comments" title="Total Comments">
+                            <i class="fa-solid fa-comment"></i> <%= p.comment_count %>
+                        </div>
+                    </div>
                 </div>
             </a>
         <% }) %>
